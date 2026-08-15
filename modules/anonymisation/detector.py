@@ -158,11 +158,16 @@ async def detect_sensitive_entities(
     ]
 
     # Couche 2 : détection par LLM local (noms, entreprises, adresses)
-    prompt = build_text_detection_prompt(user_message)
-    raw_response = await call_local_llm(
-        prompt, settings, system_prompt=TEXT_DETECTION_SYSTEM_PROMPT
-    )
-    llm_entities = parse_entity_response(raw_response)
+    llm_entities = []
+    try:
+        prompt = build_text_detection_prompt(user_message)
+        raw_response = await call_local_llm(
+            prompt, settings, system_prompt=TEXT_DETECTION_SYSTEM_PROMPT
+        )
+        llm_entities = parse_entity_response(raw_response)
+    except (httpx.ConnectError, httpx.ReadTimeout):
+        # Ollama non disponible — on continue avec les regex seuls
+        pass
 
     # Fusion : LLM d'abord (placeholders lisibles), puis patterns (encryption)
     seen_values = set()
