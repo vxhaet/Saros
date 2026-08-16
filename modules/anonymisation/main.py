@@ -61,15 +61,11 @@ async def login(user: str, password: str):
     return {"token": token, "userId": user_id}
 
 
-@app.post("/register")
-async def register(user: str, password: str):
-    """Crée un nouvel utilisateur."""
-    try:
-        user_id = register_user(user, password)
-    except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-    token = create_token(user_id)
-    return {"token": token, "userId": user_id}
+# /register désactivé en production — créer les utilisateurs directement en base
+# @app.post("/register")
+# async def register(user: str, password: str):
+#     ...
+
 
 
 # ── Upload de fichiers (token requis) ────────────────────────────────

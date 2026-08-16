@@ -262,8 +262,9 @@ class TestAPI:
             _memory_users.clear()
             self.client = TestClient(app)
 
-            # Créer un utilisateur test et récupérer le token
-            self.client.post("/register?user=testuser&password=testpass")
+            # Créer un utilisateur test directement en mémoire
+            from modules.anonymisation.storage import save_user
+            save_user("testuser", "testpass", "testuser")
             login_resp = self.client.get("/login?user=testuser&password=testpass")
             token = login_resp.json()["token"]
             self.auth_headers = {"Authorization": f"Bearer {token}"}
