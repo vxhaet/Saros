@@ -242,14 +242,14 @@ class TestAPI:
             mock_settings.file_storage_path = self.storage_path
             mock_settings.encryption_key = None
 
-            from modules.anonymisation.main import (
-                app,
-                _pending_requests,
-                _conversation_mappings,
+            from modules.anonymisation.main import app
+            from modules.anonymisation.storage import (
+                _memory_pending,
+                _memory_conversations,
             )
 
-            _pending_requests.clear()
-            _conversation_mappings.clear()
+            _memory_pending.clear()
+            _memory_conversations.clear()
             self.client = TestClient(app)
             yield
 

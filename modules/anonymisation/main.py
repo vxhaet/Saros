@@ -22,8 +22,15 @@ from .models import (
     ExecutionResponse,
     OrchestrationRequest,
 )
+from .storage import (
+    delete_pending_request,
+    get_conversation_mappings,
+    get_pending_request,
+    save_conversation_mappings,
+    save_pending_request,
+)
 
-app = FastAPI(title="Saros - Module Anonymisation", version="0.2.0")
+app = FastAPI(title="Saros - Module Anonymisation", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,12 +39,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Stockage en mémoire des requêtes en attente de validation
-_pending_requests: dict[str, dict] = {}
-
-# Stockage des mappings par conversation (persistance multi-messages)
-_conversation_mappings: dict[str, dict] = {}
 
 
 # ── Endpoint 1 : Détection ──────────────────────────────────────────
@@ -88,14 +89,14 @@ async def _detect_file(request: OrchestrationRequest) -> DetectionResponse:
         settings=settings,
     )
 
-    _pending_requests[request.requestId] = {
+    save_pending_request(request.requestId, {
         "mode": "file",
         "question": request.message,
         "conversationId": request.conversationId,
         "df": df,
-        "file_info": file_info,
+        "file_info": {"fileId": file_info.fileId, "name": file_info.name, "mimeType": file_info.mimeType, "size": file_info.size},
         "file_path": file_path,
-    }
+    })
 
     return DetectionResponse(
         requestId=request.requestId,
@@ -130,12 +131,12 @@ async def _detect_pdf(request: OrchestrationRequest) -> DetectionResponse:
         settings=settings,
     )
 
-    _pending_requests[request.requestId] = {
+    save_pending_request(request.requestId, {
         "mode": "text",
         "question": request.message,
         "content": pdf_text,
         "conversationId": request.conversationId,
-    }
+    })
 
     return DetectionResponse(
         requestId=request.requestId,
@@ -151,12 +152,12 @@ async def _detect_text(request: OrchestrationRequest) -> DetectionResponse:
         settings=settings,
     )
 
-    _pending_requests[request.requestId] = {
+    save_pending_request(request.requestId, {
         "mode": "text",
         "question": request.message,
         "content": request.message,
         "conversationId": request.conversationId,
-    }
+    })
 
     return DetectionResponse(
         requestId=request.requestId,
@@ -180,7 +181,7 @@ async def execute(request: ExecutionRequest):
     Les mappings sont persistés par conversationId pour garantir la cohérence
     au sein d'une discussion (même personne = même placeholder).
     """
-    pending = _pending_requests.get(request.requestId)
+    pending = get_pending_request(request.requestId)
     if not pending:
         raise HTTPException(
             status_code=404,
@@ -190,7 +191,7 @@ async def execute(request: ExecutionRequest):
             ),
         )
 
-    del _pending_requests[request.requestId]
+    delete_pending_request(request.requestId)
 
     mode = pending["mode"]
 
@@ -208,7 +209,7 @@ async def _execute_file(
     conv_id = request.conversationId
 
     # Charger les mappings existants de la conversation
-    existing = _conversation_mappings.get(conv_id)
+    existing = get_conversation_mappings(conv_id)
     anonymizer = Anonymizer(
         encryption_key=settings.encryption_key,
         existing_mappings=existing,
@@ -221,10 +222,11 @@ async def _execute_file(
     output_dir = Path(settings.file_storage_path) / output_id
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    output_name = f"anonymized_{file_info.name}"
+    file_name = file_info["name"] if isinstance(file_info, dict) else file_info.name
+    output_name = f"anonymized_{file_name}"
     output_path = str(output_dir / output_name)
 
-    if file_info.name.endswith(".csv"):
+    if file_name.endswith(".csv"):
         anonymized_df.to_csv(output_path, index=False)
     else:
         anonymized_df.to_excel(output_path, index=False)
@@ -232,7 +234,7 @@ async def _execute_file(
     anonymizer.save_mappings(output_path)
 
     # Sauvegarder les mappings de la conversation
-    _conversation_mappings[conv_id] = anonymizer.get_mappings()
+    save_conversation_mappings(conv_id, anonymizer.get_mappings())
 
     # 2. Envoyer au LLM externe
     anonymized_content = f"{question}\n\nDonnées anonymisées :\n{anonymized_df.to_string(index=False)}"
@@ -275,7 +277,7 @@ async def _execute_text(
     conv_id = request.conversationId
 
     # Charger les mappings existants de la conversation
-    existing = _conversation_mappings.get(conv_id)
+    existing = get_conversation_mappings(conv_id)
     anonymizer = Anonymizer(
         encryption_key=settings.encryption_key,
         existing_mappings=existing,
@@ -287,7 +289,7 @@ async def _execute_text(
     )
 
     # Sauvegarder les mappings de la conversation
-    _conversation_mappings[conv_id] = anonymizer.get_mappings()
+    save_conversation_mappings(conv_id, anonymizer.get_mappings())
 
     # 2. Envoyer au LLM externe
     # Si la question et le contenu sont identiques (mode texte pur),
