@@ -233,13 +233,23 @@ class TestAPI:
                 new_callable=AsyncMock,
                 return_value=MOCK_LLM_RESPONSE,
             ),
+            patch(
+                "modules.anonymisation.main._call_llm",
+                new_callable=AsyncMock,
+                return_value="Réponse du LLM avec [NOM_1] anonymisé.",
+            ),
         ):
             mock_settings.file_storage_path = self.storage_path
             mock_settings.encryption_key = None
 
-            from modules.anonymisation.main import app, _pending_requests
+            from modules.anonymisation.main import (
+                app,
+                _pending_requests,
+                _conversation_mappings,
+            )
 
             _pending_requests.clear()
+            _conversation_mappings.clear()
             self.client = TestClient(app)
             yield
 
@@ -295,12 +305,14 @@ class TestAPI:
         )
         assert detect_response.status_code == 200
 
-        # Étape 2 : Exécution avec champs validés
+        # Étape 2 : Exécution complète (anonymise + LLM + dé-anonymise)
         exec_response = self.client.post(
             "/anonymisation/execute",
             json={
                 "requestId": "test-002",
                 "userId": "user-1",
+                "conversationId": "conv-1",
+                "targetLlm": "claude-sonnet-4-6",
                 "validatedFields": [
                     {"field": "nom", "category": "NOM", "strategy": "placeholder"},
                     {"field": "prenom", "category": "NOM", "strategy": "placeholder"},
@@ -316,15 +328,17 @@ class TestAPI:
         assert exec_response.status_code == 200
         data = exec_response.json()
         assert data["status"] == "completed"
+        assert data["conversationId"] == "conv-1"
+        # La réponse est dé-anonymisée (le mock retourne "[NOM_1]" → remplacé par "Dupont")
+        assert "response" in data
         assert data["stats"]["fieldsAnonymized"] == 4
         assert data["stats"]["strategies"]["placeholder"] == 3
         assert data["stats"]["strategies"]["encryption"] == 1
 
-        # Vérifier le fichier anonymisé
+        # Vérifier le fichier anonymisé (toujours sauvé côté serveur)
         anonymized_df = pd.read_excel(data["anonymizedFilePath"])
         assert anonymized_df["nom"].iloc[0] == "[NOM_1]"
         assert anonymized_df["email"].iloc[0] != "jean.dupont@mail.com"
-        # montant_achat non touché
         assert anonymized_df["montant_achat"].iloc[0] == 150.00
 
     def test_execute_without_detect(self):
@@ -333,6 +347,8 @@ class TestAPI:
             json={
                 "requestId": "unknown-id",
                 "userId": "user-1",
+                "conversationId": "conv-1",
+                "targetLlm": "claude-sonnet-4-6",
                 "validatedFields": [],
             },
         )

@@ -82,52 +82,22 @@ class EntityValidation(BaseModel):
 class ExecutionRequest(BaseModel):
     requestId: str
     userId: str
+    conversationId: str
+    targetLlm: str  # ex: "claude-sonnet-4-6", "gpt-4o"
+    systemPrompt: str | None = None
     # Mode fichier
     validatedFields: list[FieldValidation] = []
     # Mode texte
     validatedEntities: list[EntityValidation] = []
 
 
-# --- Envoi LLM externe ---
-
-
-class LlmSendRequest(BaseModel):
-    requestId: str
-    userId: str
-    content: str
-    targetLlm: str  # ex: "claude", "gpt-4o", "mistral-large"
-    systemPrompt: str | None = None
-
-
-class LlmSendResponse(BaseModel):
-    requestId: str
-    status: str = "completed"
-    response: str
-    targetLlm: str
-
-
-class DeanonymizeRequest(BaseModel):
-    requestId: str
-    text: str
-    mappings: dict
-
-
-class DeanonymizeResponse(BaseModel):
-    requestId: str
-    status: str = "completed"
-    deanonymizedText: str
-
-
 class ExecutionResponse(BaseModel):
     requestId: str
+    conversationId: str
     status: str = "completed"
     mode: str  # "file" ou "text"
-    # Mode fichier
+    response: str  # Réponse finale dé-anonymisée
+    # Mode fichier uniquement
     anonymizedFileId: str | None = None
     anonymizedFilePath: str | None = None
-    # Mode texte
-    anonymizedMessage: str | None = None
-    # Commun
-    mappingFilePath: str | None = None
-    mappings: dict | None = None
     stats: dict

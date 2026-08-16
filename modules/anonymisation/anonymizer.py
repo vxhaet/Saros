@@ -8,13 +8,25 @@ from .models import AnonymizationStrategy, EntityValidation, FieldValidation
 
 
 class Anonymizer:
-    def __init__(self, encryption_key: str | None = None):
-        if encryption_key:
+    def __init__(
+        self,
+        encryption_key: str | None = None,
+        existing_mappings: dict | None = None,
+    ):
+        # Réutiliser la clé d'une conversation existante si disponible
+        if existing_mappings and existing_mappings.get("encryption_key"):
+            self.key = existing_mappings["encryption_key"].encode()
+        elif encryption_key:
             self.key = encryption_key.encode()
         else:
             self.key = Fernet.generate_key()
         self.fernet = Fernet(self.key)
-        self._placeholder_maps: dict[str, dict[str, str]] = {}
+
+        # Charger les mappings existants (continuité de conversation)
+        if existing_mappings and existing_mappings.get("placeholder_mappings"):
+            self._placeholder_maps = dict(existing_mappings["placeholder_mappings"])
+        else:
+            self._placeholder_maps: dict[str, dict[str, str]] = {}
 
     def anonymize(
         self, df: pd.DataFrame, fields: list[FieldValidation]
@@ -79,14 +91,29 @@ class Anonymizer:
                 prefix = entity.category.upper()
                 if prefix not in self._placeholder_maps:
                     self._placeholder_maps[prefix] = {}
-                counter = len(self._placeholder_maps[prefix]) + 1
-                placeholder = f"[{prefix}_{counter}]"
-                self._placeholder_maps[prefix][placeholder] = entity.value
+
+                # Vérifier si cette valeur a déjà un placeholder (conversation continue)
+                existing = self._find_existing_placeholder(prefix, entity.value)
+                if existing:
+                    placeholder = existing
+                else:
+                    counter = len(self._placeholder_maps[prefix]) + 1
+                    placeholder = f"[{prefix}_{counter}]"
+                    self._placeholder_maps[prefix][placeholder] = entity.value
+
                 result = result.replace(entity.value, placeholder)
             elif entity.strategy == AnonymizationStrategy.ENCRYPTION:
                 encrypted = self.fernet.encrypt(entity.value.encode()).decode()
                 result = result.replace(entity.value, encrypted)
         return result
+
+    def _find_existing_placeholder(self, prefix: str, value: str) -> str | None:
+        """Cherche si une valeur a déjà un placeholder dans les mappings existants."""
+        mapping = self._placeholder_maps.get(prefix, {})
+        for placeholder, original in mapping.items():
+            if original == value:
+                return placeholder
+        return None
 
     def get_mappings(self) -> dict:
         return {
