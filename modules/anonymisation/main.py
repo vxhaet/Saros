@@ -1,11 +1,12 @@
 import io
 import uuid
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 
 from .anonymizer import Anonymizer
+from .auth import authenticate_user, create_token, register_user, verify_token
 from .config import settings
 from .detector import detect_sensitive_entities, detect_sensitive_fields
 from .llm_router import deanonymize, send_to_llm
@@ -32,7 +33,7 @@ from .storage import (
     save_pending_request,
 )
 
-app = FastAPI(title="Saros - Module Anonymisation", version="0.4.0")
+app = FastAPI(title="Saros - Module Anonymisation", version="0.5.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -43,11 +44,43 @@ app.add_middleware(
 )
 
 
-# ── Upload de fichiers ───────────────────────────────────────────────
+# ── Authentification (pas de token requis) ───────────────────────────
+
+
+@app.get("/login")
+async def login(user: str, password: str):
+    """Authentifie un utilisateur et retourne un token JWT.
+
+    Le token doit être envoyé dans le header Authorization de toutes les autres requêtes :
+    Authorization: Bearer <token>
+    """
+    user_id = authenticate_user(user, password)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Identifiants incorrects.")
+    token = create_token(user_id)
+    return {"token": token, "userId": user_id}
+
+
+@app.post("/register")
+async def register(user: str, password: str):
+    """Crée un nouvel utilisateur."""
+    try:
+        user_id = register_user(user, password)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    token = create_token(user_id)
+    return {"token": token, "userId": user_id}
+
+
+# ── Upload de fichiers (token requis) ────────────────────────────────
 
 
 @app.post("/files/upload")
-async def upload_file(file_id: str, file: UploadFile = File(...)):
+async def upload_file(
+    file_id: str,
+    file: UploadFile = File(...),
+    current_user: str = Depends(verify_token),
+):
     """Upload un fichier et le stocke dans MongoDB.
 
     Le fichier est ensuite accessible par /anonymisation/detect via son fileId.
@@ -71,7 +104,10 @@ async def upload_file(file_id: str, file: UploadFile = File(...)):
 
 
 @app.post("/anonymisation/detect", response_model=DetectionResponse)
-async def detect(request: OrchestrationRequest):
+async def detect(
+    request: OrchestrationRequest,
+    current_user: str = Depends(verify_token),
+):
     """Détecte les données sensibles dans un fichier ou un message texte.
 
     Retourne la liste des données détectées avec une stratégie recommandée.
@@ -190,7 +226,10 @@ async def _detect_text(request: OrchestrationRequest) -> DetectionResponse:
 
 
 @app.post("/anonymisation/execute", response_model=ExecutionResponse)
-async def execute(request: ExecutionRequest):
+async def execute(
+    request: ExecutionRequest,
+    current_user: str = Depends(verify_token),
+):
     """Anonymise, envoie au LLM externe, dé-anonymise et retourne la réponse finale.
 
     Tout se passe côté serveur. Les données anonymisées et les mappings
@@ -380,6 +419,7 @@ async def audit(
     conversation_id: str | None = None,
     user_id: str | None = None,
     limit: int = 100,
+    current_user: str = Depends(verify_token),
 ):
     """Consulte le journal d'anonymisation pour le reporting réglementaire.
 

@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     mongo_uri: str | None = None
     mongo_db_name: str = "saros"
 
+    # Auth
+    jwt_secret: str = "change-me-in-production"
+    jwt_expiration_hours: int = 24
+
     # LLM externes
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None

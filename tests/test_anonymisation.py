@@ -254,16 +254,25 @@ class TestAPI:
             from modules.anonymisation.storage import (
                 _memory_pending,
                 _memory_conversations,
+                _memory_users,
             )
 
             _memory_pending.clear()
             _memory_conversations.clear()
+            _memory_users.clear()
             self.client = TestClient(app)
+
+            # Créer un utilisateur test et récupérer le token
+            self.client.post("/register?user=testuser&password=testpass")
+            login_resp = self.client.get("/login?user=testuser&password=testpass")
+            token = login_resp.json()["token"]
+            self.auth_headers = {"Authorization": f"Bearer {token}"}
             yield
 
     def test_detect_endpoint(self):
         response = self.client.post(
             "/anonymisation/detect",
+            headers=self.auth_headers,
             json={
                 "requestId": "test-001",
                 "userId": "user-1",
@@ -295,6 +304,7 @@ class TestAPI:
         # Étape 1 : Détection
         detect_response = self.client.post(
             "/anonymisation/detect",
+            headers=self.auth_headers,
             json={
                 "requestId": "test-002",
                 "userId": "user-1",
@@ -316,6 +326,7 @@ class TestAPI:
         # Étape 2 : Exécution complète (anonymise + LLM + dé-anonymise)
         exec_response = self.client.post(
             "/anonymisation/execute",
+            headers=self.auth_headers,
             json={
                 "requestId": "test-002",
                 "userId": "user-1",
@@ -349,6 +360,7 @@ class TestAPI:
     def test_execute_without_detect(self):
         response = self.client.post(
             "/anonymisation/execute",
+            headers=self.auth_headers,
             json={
                 "requestId": "unknown-id",
                 "userId": "user-1",

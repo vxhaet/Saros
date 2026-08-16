@@ -37,6 +37,53 @@ def _get_db():
 
 # ── Fallback en mémoire ─────────────────────────────────────────────
 
+_memory_users: dict[str, dict] = {}
+
+
+# ── Utilisateurs ─────────────────────────────────────────────────────
+
+
+def save_user(username: str, password: str, user_id: str) -> None:
+    db = _get_db()
+    now = datetime.now(timezone.utc)
+
+    if db is None:
+        _memory_users[username] = {
+            "username": username,
+            "password": password,
+            "user_id": user_id,
+            "created_at": now,
+        }
+        return
+
+    db.users.update_one(
+        {"_id": username},
+        {
+            "$set": {
+                "password": password,
+                "user_id": user_id,
+                "created_at": now,
+            }
+        },
+        upsert=True,
+    )
+
+
+def get_user(username: str) -> dict | None:
+    db = _get_db()
+
+    if db is None:
+        return _memory_users.get(username)
+
+    doc = db.users.find_one({"_id": username})
+    if not doc:
+        return None
+    return {
+        "username": doc["_id"],
+        "password": doc["password"],
+        "user_id": doc["user_id"],
+    }
+
 _memory_pending: dict[str, dict] = {}
 _memory_conversations: dict[str, dict] = {}
 
