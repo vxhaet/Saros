@@ -24,7 +24,13 @@ def _get_db():
     import certifi
     from pymongo import MongoClient
 
-    _mongo_client = MongoClient(settings.mongo_uri, tlsCAFile=certifi.where())
+    _mongo_client = MongoClient(
+        settings.mongo_uri,
+        tls=True,
+        tlsCAFile=certifi.where(),
+        tlsAllowInvalidCertificates=False,
+        serverSelectionTimeoutMS=10000,
+    )
     _db = _mongo_client[settings.mongo_db_name]
     return _db
 
