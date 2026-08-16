@@ -2,6 +2,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import httpx
 
 from .anonymizer import Anonymizer
@@ -23,6 +24,14 @@ from .models import (
 )
 
 app = FastAPI(title="Saros - Module Anonymisation", version="0.2.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Stockage en mémoire des requêtes en attente de validation
 _pending_requests: dict[str, dict] = {}
