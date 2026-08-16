@@ -24,8 +24,10 @@ from .models import (
 )
 from .storage import (
     delete_pending_request,
+    get_anonymisation_audit,
     get_conversation_mappings,
     get_pending_request,
+    save_anonymisation_audit,
     save_conversation_mappings,
     save_pending_request,
 )
@@ -233,8 +235,10 @@ async def _execute_file(
 
     anonymizer.save_mappings(output_path)
 
-    # Sauvegarder les mappings de la conversation
-    save_conversation_mappings(conv_id, anonymizer.get_mappings())
+    # Sauvegarder les mappings de la conversation + audit
+    mappings = anonymizer.get_mappings()
+    save_conversation_mappings(conv_id, mappings)
+    save_anonymisation_audit(conv_id, request.requestId, request.userId, mappings)
 
     # 2. Envoyer au LLM externe
     anonymized_content = f"{question}\n\nDonnées anonymisées :\n{anonymized_df.to_string(index=False)}"
@@ -288,8 +292,10 @@ async def _execute_text(
         content, request.validatedEntities
     )
 
-    # Sauvegarder les mappings de la conversation
-    save_conversation_mappings(conv_id, anonymizer.get_mappings())
+    # Sauvegarder les mappings de la conversation + audit
+    mappings = anonymizer.get_mappings()
+    save_conversation_mappings(conv_id, mappings)
+    save_anonymisation_audit(conv_id, request.requestId, request.userId, mappings)
 
     # 2. Envoyer au LLM externe
     # Si la question et le contenu sont identiques (mode texte pur),
@@ -351,3 +357,31 @@ async def _call_llm(
             status_code=502,
             detail=f"Erreur du LLM '{target_llm}' : {e.response.status_code} - {e.response.text}",
         )
+
+
+# ── Endpoint de reporting ────────────────────────────────────────────
+
+
+@app.get("/anonymisation/audit")
+async def audit(
+    conversation_id: str | None = None,
+    user_id: str | None = None,
+    limit: int = 100,
+):
+    """Consulte le journal d'anonymisation pour le reporting réglementaire.
+
+    Filtrable par conversation_id et/ou user_id.
+    Retourne la liste des correspondances valeur originale ↔ valeur anonymisée.
+    """
+    records = get_anonymisation_audit(
+        conversation_id=conversation_id,
+        user_id=user_id,
+        limit=limit,
+    )
+
+    # Convertir les datetime pour la sérialisation JSON
+    for r in records:
+        if "created_at" in r and hasattr(r["created_at"], "isoformat"):
+            r["created_at"] = r["created_at"].isoformat()
+
+    return {"total": len(records), "records": records}

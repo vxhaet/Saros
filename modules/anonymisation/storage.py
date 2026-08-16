@@ -125,3 +125,94 @@ def get_conversation_mappings(conversation_id: str) -> dict | None:
     if not doc:
         return None
     return doc["mappings"]
+
+
+# ── Journal d'anonymisation (table lisible pour reporting) ───────────
+
+_memory_audit: list[dict] = []
+
+
+def save_anonymisation_audit(
+    conversation_id: str,
+    request_id: str,
+    user_id: str,
+    mappings: dict,
+) -> None:
+    """Enregistre chaque anonymisation dans une table lisible.
+
+    Chaque ligne = une correspondance valeur originale ↔ valeur anonymisée.
+    Utilisable pour le reporting réglementaire (RGPD).
+    """
+    db = _get_db()
+    now = datetime.now(timezone.utc)
+
+    records = []
+
+    # Placeholders
+    placeholder_mappings = mappings.get("placeholder_mappings", {})
+    for category, items in placeholder_mappings.items():
+        for placeholder, original_value in items.items():
+            records.append({
+                "conversation_id": conversation_id,
+                "request_id": request_id,
+                "user_id": user_id,
+                "categorie": category,
+                "valeur_originale": original_value,
+                "valeur_anonymisee": placeholder,
+                "strategie": "placeholder",
+                "created_at": now,
+            })
+
+    # Chiffrements — on ne stocke pas les valeurs chiffrées individuellement
+    # car elles sont réversibles via la clé. On enregistre juste la clé.
+    encryption_key = mappings.get("encryption_key")
+    if encryption_key:
+        records.append({
+            "conversation_id": conversation_id,
+            "request_id": request_id,
+            "user_id": user_id,
+            "categorie": "_ENCRYPTION_KEY",
+            "valeur_originale": "(clé de chiffrement)",
+            "valeur_anonymisee": encryption_key,
+            "strategie": "encryption",
+            "created_at": now,
+        })
+
+    if db is None:
+        _memory_audit.extend(records)
+        return
+
+    if records:
+        db.anonymisation_audit.insert_many(records)
+
+
+def get_anonymisation_audit(
+    conversation_id: str | None = None,
+    user_id: str | None = None,
+    limit: int = 100,
+) -> list[dict]:
+    """Récupère le journal d'anonymisation pour le reporting.
+
+    Filtrable par conversation_id et/ou user_id.
+    """
+    db = _get_db()
+
+    if db is None:
+        results = _memory_audit
+        if conversation_id:
+            results = [r for r in results if r["conversation_id"] == conversation_id]
+        if user_id:
+            results = [r for r in results if r["user_id"] == user_id]
+        return results[:limit]
+
+    query = {}
+    if conversation_id:
+        query["conversation_id"] = conversation_id
+    if user_id:
+        query["user_id"] = user_id
+
+    cursor = db.anonymisation_audit.find(
+        query, {"_id": 0}
+    ).sort("created_at", -1).limit(limit)
+
+    return list(cursor)
