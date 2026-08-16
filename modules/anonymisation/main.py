@@ -1,7 +1,7 @@
+import io
 import uuid
-from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 
@@ -11,10 +11,9 @@ from .detector import detect_sensitive_entities, detect_sensitive_fields
 from .llm_router import deanonymize, send_to_llm
 from .file_handler import (
     extract_samples,
-    extract_text_from_pdf,
+    extract_text_from_pdf_storage,
     is_text_file,
-    load_file,
-    resolve_file_path,
+    load_file_from_storage,
 )
 from .models import (
     DetectionResponse,
@@ -29,10 +28,11 @@ from .storage import (
     get_pending_request,
     save_anonymisation_audit,
     save_conversation_mappings,
+    save_file,
     save_pending_request,
 )
 
-app = FastAPI(title="Saros - Module Anonymisation", version="0.3.0")
+app = FastAPI(title="Saros - Module Anonymisation", version="0.4.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,6 +41,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── Upload de fichiers ───────────────────────────────────────────────
+
+
+@app.post("/files/upload")
+async def upload_file(file_id: str, file: UploadFile = File(...)):
+    """Upload un fichier et le stocke dans MongoDB.
+
+    Le fichier est ensuite accessible par /anonymisation/detect via son fileId.
+    """
+    content = await file.read()
+    save_file(
+        file_id=file_id,
+        file_name=file.filename,
+        content=content,
+        mime_type=file.content_type or "application/octet-stream",
+    )
+    return {
+        "status": "uploaded",
+        "fileId": file_id,
+        "fileName": file.filename,
+        "size": len(content),
+    }
 
 
 # ── Endpoint 1 : Détection ──────────────────────────────────────────
@@ -75,13 +99,10 @@ async def _detect_file(request: OrchestrationRequest) -> DetectionResponse:
     file_info = request.files[0]
 
     try:
-        file_path = resolve_file_path(
-            settings.file_storage_path, file_info.fileId, file_info.name
-        )
+        df = load_file_from_storage(file_info.fileId, file_info.name)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    df = load_file(file_path)
     samples = extract_samples(df)
 
     detected_fields = await detect_sensitive_fields(
@@ -97,7 +118,6 @@ async def _detect_file(request: OrchestrationRequest) -> DetectionResponse:
         "conversationId": request.conversationId,
         "df": df,
         "file_info": {"fileId": file_info.fileId, "name": file_info.name, "mimeType": file_info.mimeType, "size": file_info.size},
-        "file_path": file_path,
     })
 
     return DetectionResponse(
@@ -113,13 +133,10 @@ async def _detect_pdf(request: OrchestrationRequest) -> DetectionResponse:
     file_info = request.files[0]
 
     try:
-        file_path = resolve_file_path(
-            settings.file_storage_path, file_info.fileId, file_info.name
-        )
+        pdf_text = extract_text_from_pdf_storage(file_info.fileId, file_info.name)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    pdf_text = extract_text_from_pdf(file_path)
     if not pdf_text.strip():
         raise HTTPException(
             status_code=400,
@@ -220,20 +237,17 @@ async def _execute_file(
     # 1. Anonymiser le fichier
     anonymized_df = anonymizer.anonymize(df, request.validatedFields)
 
+    # Sauvegarder le fichier anonymisé dans MongoDB
     output_id = f"anon-{uuid.uuid4().hex[:12]}"
-    output_dir = Path(settings.file_storage_path) / output_id
-    output_dir.mkdir(parents=True, exist_ok=True)
-
     file_name = file_info["name"] if isinstance(file_info, dict) else file_info.name
     output_name = f"anonymized_{file_name}"
-    output_path = str(output_dir / output_name)
 
+    buf = io.BytesIO()
     if file_name.endswith(".csv"):
-        anonymized_df.to_csv(output_path, index=False)
+        anonymized_df.to_csv(buf, index=False)
     else:
-        anonymized_df.to_excel(output_path, index=False)
-
-    anonymizer.save_mappings(output_path)
+        anonymized_df.to_excel(buf, index=False)
+    save_file(output_id, output_name, buf.getvalue(), "application/octet-stream")
 
     # Sauvegarder les mappings de la conversation + audit
     mappings = anonymizer.get_mappings()
@@ -257,7 +271,6 @@ async def _execute_file(
         mode="file",
         response=final_response,
         anonymizedFileId=output_id,
-        anonymizedFilePath=output_path,
         stats={
             "totalRows": len(anonymized_df),
             "fieldsAnonymized": len(request.validatedFields),

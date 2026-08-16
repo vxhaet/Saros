@@ -193,6 +193,53 @@ def save_anonymisation_audit(
         db.anonymisation_audit.insert_many(records)
 
 
+# ── Stockage de fichiers (MongoDB) ────────────────────────────────────
+
+_memory_files: dict[str, dict] = {}
+
+
+def save_file(file_id: str, file_name: str, content: bytes, mime_type: str) -> None:
+    """Stocke un fichier dans MongoDB (ou en mémoire pour le dev)."""
+    db = _get_db()
+    now = datetime.now(timezone.utc)
+
+    if db is None:
+        _memory_files[f"{file_id}/{file_name}"] = {
+            "file_id": file_id,
+            "file_name": file_name,
+            "content": content,
+            "mime_type": mime_type,
+            "created_at": now,
+        }
+        return
+
+    db.files.update_one(
+        {"file_id": file_id, "file_name": file_name},
+        {
+            "$set": {
+                "content": content,
+                "mime_type": mime_type,
+                "updated_at": now,
+            }
+        },
+        upsert=True,
+    )
+
+
+def get_file(file_id: str, file_name: str) -> bytes | None:
+    """Récupère le contenu d'un fichier depuis MongoDB (ou mémoire)."""
+    db = _get_db()
+
+    if db is None:
+        entry = _memory_files.get(f"{file_id}/{file_name}")
+        return entry["content"] if entry else None
+
+    doc = db.files.find_one({"file_id": file_id, "file_name": file_name})
+    if not doc:
+        return None
+    return doc["content"]
+
+
 def get_anonymisation_audit(
     conversation_id: str | None = None,
     user_id: str | None = None,

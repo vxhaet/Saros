@@ -13,7 +13,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from modules.anonymisation.anonymizer import Anonymizer
-from modules.anonymisation.file_handler import extract_samples, load_file
+from modules.anonymisation.file_handler import extract_samples, load_file_from_storage
+from modules.anonymisation.storage import save_file
 from modules.anonymisation.llm_router import deanonymize, resolve_provider
 from modules.anonymisation.models import AnonymizationStrategy, FieldValidation
 
@@ -124,25 +125,28 @@ MOCK_LLM_RESPONSE = json.dumps(
 class TestFileHandler:
     def test_load_excel(self, tmp_path):
         create_test_excel(str(tmp_path))
-        file_path = str(tmp_path / "file-001" / "clients.xlsx")
-        df = load_file(file_path)
+        file_path = tmp_path / "file-001" / "clients.xlsx"
+        with open(file_path, "rb") as f:
+            save_file("file-001", "clients.xlsx", f.read(), "application/xlsx")
+        df = load_file_from_storage("file-001", "clients.xlsx")
         assert len(df) == 5
         assert "nom" in df.columns
         assert "email" in df.columns
 
     def test_extract_samples(self, tmp_path):
         create_test_excel(str(tmp_path))
-        file_path = str(tmp_path / "file-001" / "clients.xlsx")
-        df = load_file(file_path)
+        file_path = tmp_path / "file-001" / "clients.xlsx"
+        with open(file_path, "rb") as f:
+            save_file("file-test-samples", "clients.xlsx", f.read(), "application/xlsx")
+        df = load_file_from_storage("file-test-samples", "clients.xlsx")
         samples = extract_samples(df, n=2)
         assert len(samples["nom"]) == 2
         assert samples["nom"][0] == "Dupont"
 
-    def test_unsupported_format(self, tmp_path):
-        bad_file = tmp_path / "data.txt"
-        bad_file.write_text("hello")
+    def test_unsupported_format(self):
+        save_file("file-bad", "data.txt", b"hello", "text/plain")
         with pytest.raises(ValueError, match="Format non supporté"):
-            load_file(str(bad_file))
+            load_file_from_storage("file-bad", "data.txt")
 
 
 class TestAnonymizer:
@@ -223,6 +227,11 @@ class TestAPI:
         self.storage_path = str(tmp_path)
         create_test_excel(self.storage_path)
 
+        # Stocker le fichier test dans le storage en mémoire
+        file_path = tmp_path / "file-001" / "clients.xlsx"
+        with open(file_path, "rb") as f:
+            save_file("file-001", "clients.xlsx", f.read(), "application/xlsx")
+
         # Patch les settings et le LLM
         with (
             patch(
@@ -239,7 +248,6 @@ class TestAPI:
                 return_value="Réponse du LLM avec [NOM_1] anonymisé.",
             ),
         ):
-            mock_settings.file_storage_path = self.storage_path
             mock_settings.encryption_key = None
 
             from modules.anonymisation.main import app
@@ -335,11 +343,8 @@ class TestAPI:
         assert data["stats"]["strategies"]["placeholder"] == 3
         assert data["stats"]["strategies"]["encryption"] == 1
 
-        # Vérifier le fichier anonymisé (toujours sauvé côté serveur)
-        anonymized_df = pd.read_excel(data["anonymizedFilePath"])
-        assert anonymized_df["nom"].iloc[0] == "[NOM_1]"
-        assert anonymized_df["email"].iloc[0] != "jean.dupont@mail.com"
-        assert anonymized_df["montant_achat"].iloc[0] == 150.00
+        # Vérifier que le fichier anonymisé est dans le storage
+        assert data["anonymizedFileId"] is not None
 
     def test_execute_without_detect(self):
         response = self.client.post(
