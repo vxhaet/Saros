@@ -85,6 +85,8 @@ class ExecutionRequest(BaseModel):
     conversationId: str
     targetLlm: str  # ex: "claude-sonnet-4-6", "gpt-4o"
     systemPrompt: str | None = None
+    webSearch: bool = False  # Active la recherche web via Tavily
+    webSearchDomains: list[str] = []  # Restreint la recherche à ces domaines
     # Mode fichier
     validatedFields: list[FieldValidation] = []
     # Mode texte
@@ -97,6 +99,7 @@ class ExecutionResponse(BaseModel):
     status: str = "completed"
     mode: str  # "file" ou "text"
     response: str  # Réponse finale dé-anonymisée
+    webSearchUsed: bool = False
     # Mode fichier uniquement
     anonymizedFileId: str | None = None
     anonymizedFilePath: str | None = None

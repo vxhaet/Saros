@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me-in-production"
     jwt_expiration_hours: int = 24
 
+    # Recherche web
+    tavily_api_key: str | None = None
+
     # LLM externes
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None

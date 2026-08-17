@@ -10,6 +10,7 @@ from .auth import authenticate_user, create_token, register_user, verify_token
 from .config import settings
 from .detector import detect_sensitive_entities, detect_sensitive_fields
 from .llm_router import deanonymize, send_to_llm
+from .web_search import search_web
 from .file_handler import (
     extract_samples,
     extract_text_from_pdf_storage,
@@ -289,15 +290,28 @@ async def _execute_file(
     save_conversation_mappings(conv_id, mappings)
     save_anonymisation_audit(conv_id, request.requestId, request.userId, mappings)
 
-    # 2. Envoyer au LLM externe
-    anonymized_content = f"{question}\n\nDonnées anonymisées :\n{anonymized_df.to_string(index=False)}"
+    # 2. Recherche web (si activée)
+    web_context = ""
+    web_used = False
+    if request.webSearch:
+        web_results = search_web(
+            query=question,
+            settings=settings,
+            include_domains=request.webSearchDomains or None,
+        )
+        if web_results:
+            web_context = f"\n\nInformations trouvées sur le web :\n{web_results}\n"
+            web_used = True
+
+    # 3. Envoyer au LLM externe
+    anonymized_content = f"{question}{web_context}\n\nDonnées anonymisées :\n{anonymized_df.to_string(index=False)}"
     llm_response = await _call_llm(
         content=anonymized_content,
         target_llm=request.targetLlm,
         system_prompt=request.systemPrompt,
     )
 
-    # 3. Dé-anonymiser la réponse
+    # 4. Dé-anonymiser la réponse
     final_response = deanonymize(llm_response, anonymizer.get_mappings())
 
     return ExecutionResponse(
@@ -305,6 +319,7 @@ async def _execute_file(
         conversationId=conv_id,
         mode="file",
         response=final_response,
+        webSearchUsed=web_used,
         anonymizedFileId=output_id,
         stats={
             "totalRows": len(anonymized_df),
@@ -345,14 +360,24 @@ async def _execute_text(
     save_conversation_mappings(conv_id, mappings)
     save_anonymisation_audit(conv_id, request.requestId, request.userId, mappings)
 
-    # 2. Envoyer au LLM externe
-    # Si la question et le contenu sont identiques (mode texte pur),
-    # on envoie juste le message anonymisé.
-    # Sinon (mode PDF), on combine la question + le contenu anonymisé.
+    # 2. Recherche web (si activée)
+    web_context = ""
+    web_used = False
+    if request.webSearch:
+        web_results = search_web(
+            query=question,
+            settings=settings,
+            include_domains=request.webSearchDomains or None,
+        )
+        if web_results:
+            web_context = f"\n\nInformations trouvées sur le web :\n{web_results}\n"
+            web_used = True
+
+    # 3. Envoyer au LLM externe
     if question == content:
-        llm_content = anonymized_message
+        llm_content = f"{anonymized_message}{web_context}"
     else:
-        llm_content = f"{question}\n\n{anonymized_message}"
+        llm_content = f"{question}{web_context}\n\n{anonymized_message}"
 
     llm_response = await _call_llm(
         content=llm_content,
@@ -360,7 +385,7 @@ async def _execute_text(
         system_prompt=request.systemPrompt,
     )
 
-    # 3. Dé-anonymiser la réponse
+    # 4. Dé-anonymiser la réponse
     final_response = deanonymize(llm_response, anonymizer.get_mappings())
 
     return ExecutionResponse(
@@ -368,6 +393,7 @@ async def _execute_text(
         conversationId=conv_id,
         mode="text",
         response=final_response,
+        webSearchUsed=web_used,
         stats={
             "entitiesAnonymized": len(request.validatedEntities),
             "strategies": {
