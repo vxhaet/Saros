@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from modules.services.anonymizer import Anonymizer
 from modules.anonymisation.file_handler import extract_samples, load_file_from_storage
 from modules.anonymisation.storage import save_file
-from modules.anonymisation.llm_router import deanonymize, resolve_provider
+from modules.services.llm_router import deanonymize, resolve_provider
 from modules.anonymisation.models import AnonymizationStrategy, FieldValidation
 
 

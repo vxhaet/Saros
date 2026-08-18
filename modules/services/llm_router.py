@@ -1,7 +1,7 @@
 import httpx
 from cryptography.fernet import Fernet
 
-from .config import Settings
+from ..anonymisation.config import Settings
 
 
 # Mapping des providers par préfixe de modèle
