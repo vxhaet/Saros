@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from modules.anonymisation.anonymizer import Anonymizer
+from modules.services.anonymizer import Anonymizer
 from modules.anonymisation.file_handler import extract_samples, load_file_from_storage
 from modules.anonymisation.storage import save_file
 from modules.anonymisation.llm_router import deanonymize, resolve_provider
@@ -246,6 +246,10 @@ class TestAPI:
                 "modules.anonymisation.main._call_llm",
                 new_callable=AsyncMock,
                 return_value="Réponse du LLM avec [NOM_1] anonymisé.",
+            ),
+            patch(
+                "modules.anonymisation.main.search_web",
+                return_value=None,
             ),
         ):
             mock_settings.encryption_key = None

@@ -6,7 +6,7 @@ Supporte la recherche générale et la recherche ciblée sur des domaines spéci
 
 from tavily import TavilyClient
 
-from .config import Settings
+from ..anonymisation.config import Settings
 
 
 def search_web(

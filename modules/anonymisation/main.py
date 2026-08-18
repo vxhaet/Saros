@@ -5,12 +5,12 @@ from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 
-from .anonymizer import Anonymizer
-from .auth import authenticate_user, create_token, register_user, verify_token
+from ..services.anonymizer import Anonymizer
+from ..services.auth import authenticate_user, create_token, register_user, verify_token
 from .config import settings
 from .detector import detect_sensitive_entities, detect_sensitive_fields
 from .llm_router import deanonymize, send_to_llm
-from .web_search import search_web
+from ..services.web_search import search_web
 from .file_handler import (
     extract_samples,
     extract_text_from_pdf_storage,

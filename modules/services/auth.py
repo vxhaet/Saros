@@ -10,8 +10,8 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from .config import settings
-from .storage import get_user, save_user
+from ..anonymisation.config import settings
+from ..anonymisation.storage import get_user, save_user
 
 security = HTTPBearer()
 

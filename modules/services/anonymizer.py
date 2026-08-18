@@ -4,7 +4,7 @@ import pandas as pd
 from cryptography.fernet import Fernet
 from pathlib import Path
 
-from .models import AnonymizationStrategy, EntityValidation, FieldValidation
+from ..anonymisation.models import AnonymizationStrategy, EntityValidation, FieldValidation
 
 
 class Anonymizer:
