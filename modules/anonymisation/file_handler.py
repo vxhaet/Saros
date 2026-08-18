@@ -90,12 +90,17 @@ def _extract_from_image(content: bytes) -> str:
 
         image = Image.open(io.BytesIO(content))
         text = pytesseract.image_to_string(image, lang="fra+eng")
+        if not text.strip():
+            raise ValueError("Aucun texte détecté dans l'image.")
         return text.strip()
-    except ImportError:
+    except (ImportError, EnvironmentError, FileNotFoundError):
         raise ValueError(
-            "pytesseract n'est pas installé. "
-            "Installez Tesseract OCR pour supporter les images."
+            "L'OCR d'images n'est pas disponible sur ce serveur. "
+            "Tesseract doit être installé. "
+            "Cette fonctionnalité sera active sur le serveur dédié."
         )
+    except ValueError:
+        raise
     except Exception as e:
         raise ValueError(f"Erreur OCR sur l'image : {e}")
 
