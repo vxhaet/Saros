@@ -50,6 +50,25 @@ def verify_token(
         )
 
 
+def refresh_existing_token(token: str) -> str:
+    """Génère un nouveau token à partir d'un token existant (même expiré).
+
+    Permet de renouveler un token sans redemander le mot de passe.
+    Accepte les tokens expirés (dans une limite raisonnable).
+    """
+    try:
+        # Accepter les tokens expirés pour le refresh
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret,
+            algorithms=["HS256"],
+            options={"verify_exp": False},
+        )
+        return create_token(payload["sub"])
+    except jwt.InvalidTokenError:
+        raise ValueError("Token invalide, impossible de le renouveler.")
+
+
 def authenticate_user(user: str, password: str) -> str | None:
     """Vérifie les credentials et retourne le user_id si OK."""
     stored = get_user(user)

@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import httpx
 
 from ..services.anonymizer import Anonymizer, deanonymize
-from ..services.auth import authenticate_user, create_token, register_user, verify_token
+from ..services.auth import authenticate_user, create_token, refresh_existing_token, register_user, verify_token
 from .config import settings
 from .detector import detect_sensitive_entities, detect_sensitive_fields
 from ..services.llm_router import send_to_llm
@@ -67,6 +67,19 @@ async def login(user: str, password: str):
 # async def register(user: str, password: str):
 #     ...
 
+
+@app.post("/refresh")
+async def refresh(token: str):
+    """Renouvelle un token JWT (même expiré).
+
+    Envoie l'ancien token, reçoit un nouveau valide.
+    Pas besoin de renvoyer user/password.
+    """
+    try:
+        new_token = refresh_existing_token(token)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    return {"token": new_token}
 
 
 # ── Upload de fichiers (token requis) ────────────────────────────────
