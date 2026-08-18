@@ -82,21 +82,27 @@ def _extract_from_txt(content: bytes) -> str:
 def _extract_from_image(content: bytes) -> str:
     """Extrait le texte d'une image via OCR (EasyOCR).
 
-    Fonctionne sans installation système — pur Python.
-    Supporte français et anglais.
+    Nécessite un serveur avec suffisamment de RAM (>1GB).
+    Désactivé sur Render free (512MB) — actif sur serveur dédié.
     """
-    import easyocr
+    try:
+        import easyocr
 
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as tmp:
-        tmp.write(content)
-        tmp.flush()
-        reader = easyocr.Reader(["fr", "en"], gpu=False, verbose=False)
-        results = reader.readtext(tmp.name)
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as tmp:
+            tmp.write(content)
+            tmp.flush()
+            reader = easyocr.Reader(["fr", "en"], gpu=False, verbose=False)
+            results = reader.readtext(tmp.name)
 
-    text = " ".join([r[1] for r in results])
-    if not text.strip():
-        raise ValueError("Aucun texte détecté dans l'image.")
-    return text.strip()
+        text = " ".join([r[1] for r in results])
+        if not text.strip():
+            raise ValueError("Aucun texte détecté dans l'image.")
+        return text.strip()
+    except (MemoryError, OSError):
+        raise ValueError(
+            "L'OCR d'images nécessite plus de mémoire que disponible sur ce serveur. "
+            "Cette fonctionnalité sera active sur le serveur dédié."
+        )
 
 
 def is_text_file(file_name: str) -> bool:
