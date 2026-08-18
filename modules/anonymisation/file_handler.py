@@ -9,8 +9,9 @@ from .storage import get_file
 
 
 TABULAR_EXTENSIONS = {".xlsx", ".xls", ".csv"}
-TEXT_EXTENSIONS = {".pdf"}
-SUPPORTED_EXTENSIONS = TABULAR_EXTENSIONS | TEXT_EXTENSIONS
+TEXT_EXTENSIONS = {".pdf", ".docx", ".txt"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
+SUPPORTED_EXTENSIONS = TABULAR_EXTENSIONS | TEXT_EXTENSIONS | IMAGE_EXTENSIONS
 
 
 def load_file_from_storage(file_id: str, file_name: str) -> pd.DataFrame:
@@ -31,15 +32,29 @@ def load_file_from_storage(file_id: str, file_name: str) -> pd.DataFrame:
     return pd.read_csv(buf)
 
 
-def extract_text_from_pdf_storage(file_id: str, file_name: str) -> str:
-    """Extrait le texte d'un PDF depuis MongoDB (ou mémoire)."""
+def extract_text_from_storage(file_id: str, file_name: str) -> str:
+    """Extrait le texte d'un fichier (PDF, DOCX, TXT, image) depuis le stockage."""
     content = get_file(file_id, file_name)
     if content is None:
         raise FileNotFoundError(
             f"Fichier introuvable dans le stockage : {file_id}/{file_name}"
         )
 
-    # pdfplumber a besoin d'un fichier sur disque → fichier temporaire
+    suffix = Path(file_name).suffix.lower()
+
+    if suffix == ".pdf":
+        return _extract_from_pdf(content)
+    elif suffix == ".docx":
+        return _extract_from_docx(content)
+    elif suffix == ".txt":
+        return _extract_from_txt(content)
+    elif suffix in IMAGE_EXTENSIONS:
+        return _extract_from_image(content)
+    else:
+        raise ValueError(f"Format non supporté pour l'extraction de texte : {suffix}")
+
+
+def _extract_from_pdf(content: bytes) -> str:
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
         tmp.write(content)
         tmp.flush()
@@ -52,8 +67,42 @@ def extract_text_from_pdf_storage(file_id: str, file_name: str) -> str:
     return "\n".join(pages_text)
 
 
+def _extract_from_docx(content: bytes) -> str:
+    from docx import Document
+
+    doc = Document(io.BytesIO(content))
+    paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+    return "\n".join(paragraphs)
+
+
+def _extract_from_txt(content: bytes) -> str:
+    return content.decode("utf-8", errors="replace")
+
+
+def _extract_from_image(content: bytes) -> str:
+    """Extrait le texte d'une image via OCR (Tesseract).
+
+    Si Tesseract n'est pas installé, retourne un message d'erreur explicite.
+    """
+    try:
+        import pytesseract
+        from PIL import Image
+
+        image = Image.open(io.BytesIO(content))
+        text = pytesseract.image_to_string(image, lang="fra+eng")
+        return text.strip()
+    except ImportError:
+        raise ValueError(
+            "pytesseract n'est pas installé. "
+            "Installez Tesseract OCR pour supporter les images."
+        )
+    except Exception as e:
+        raise ValueError(f"Erreur OCR sur l'image : {e}")
+
+
 def is_text_file(file_name: str) -> bool:
-    return Path(file_name).suffix.lower() in TEXT_EXTENSIONS
+    suffix = Path(file_name).suffix.lower()
+    return suffix in TEXT_EXTENSIONS or suffix in IMAGE_EXTENSIONS
 
 
 def extract_samples(df: pd.DataFrame, n: int = 3) -> dict[str, list[str]]:

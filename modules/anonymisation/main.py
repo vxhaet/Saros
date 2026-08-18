@@ -13,7 +13,7 @@ from ..services.llm_router import send_to_llm
 from ..services.web_search import search_web
 from .file_handler import (
     extract_samples,
-    extract_text_from_pdf_storage,
+    extract_text_from_storage,
     is_text_file,
     load_file_from_storage,
 )
@@ -127,7 +127,7 @@ async def detect(
         if request.files and not is_text_file(request.files[0].name):
             return await _detect_file(request)
         if request.files and is_text_file(request.files[0].name):
-            return await _detect_pdf(request)
+            return await _detect_text_file(request)
         return await _detect_text(request)
     except httpx.ReadTimeout:
         raise HTTPException(
@@ -175,21 +175,24 @@ async def _detect_file(request: OrchestrationRequest) -> DetectionResponse:
     )
 
 
-async def _detect_pdf(request: OrchestrationRequest) -> DetectionResponse:
+async def _detect_text_file(request: OrchestrationRequest) -> DetectionResponse:
+    """Détection pour les fichiers textuels : PDF, DOCX, TXT, images (OCR)."""
     file_info = request.files[0]
 
     try:
-        pdf_text = extract_text_from_pdf_storage(file_info.fileId, file_info.name)
+        extracted_text = extract_text_from_storage(file_info.fileId, file_info.name)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    if not pdf_text.strip():
+    if not extracted_text.strip():
         raise HTTPException(
             status_code=400,
-            detail="Le PDF ne contient pas de texte extractible.",
+            detail="Le fichier ne contient pas de texte extractible.",
         )
 
-    full_text = f"{request.message}\n\nContenu du document :\n{pdf_text}"
+    full_text = f"{request.message}\n\nContenu du document :\n{extracted_text}"
 
     detected_entities = await detect_sensitive_entities(
         user_message=full_text,
@@ -199,7 +202,7 @@ async def _detect_pdf(request: OrchestrationRequest) -> DetectionResponse:
     save_pending_request(request.requestId, {
         "mode": "text",
         "question": request.message,
-        "content": pdf_text,
+        "content": extracted_text,
         "conversationId": request.conversationId,
     })
 
@@ -207,7 +210,7 @@ async def _detect_pdf(request: OrchestrationRequest) -> DetectionResponse:
         requestId=request.requestId,
         mode="text",
         detectedEntities=detected_entities,
-        originalMessage=pdf_text,
+        originalMessage=extracted_text,
     )
 
 
