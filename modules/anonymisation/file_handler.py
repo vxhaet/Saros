@@ -80,29 +80,23 @@ def _extract_from_txt(content: bytes) -> str:
 
 
 def _extract_from_image(content: bytes) -> str:
-    """Extrait le texte d'une image via OCR (Tesseract).
+    """Extrait le texte d'une image via OCR (EasyOCR).
 
-    Si Tesseract n'est pas installé, retourne un message d'erreur explicite.
+    Fonctionne sans installation système — pur Python.
+    Supporte français et anglais.
     """
-    try:
-        import pytesseract
-        from PIL import Image
+    import easyocr
 
-        image = Image.open(io.BytesIO(content))
-        text = pytesseract.image_to_string(image, lang="fra+eng")
-        if not text.strip():
-            raise ValueError("Aucun texte détecté dans l'image.")
-        return text.strip()
-    except (ImportError, EnvironmentError, FileNotFoundError):
-        raise ValueError(
-            "L'OCR d'images n'est pas disponible sur ce serveur. "
-            "Tesseract doit être installé. "
-            "Cette fonctionnalité sera active sur le serveur dédié."
-        )
-    except ValueError:
-        raise
-    except Exception as e:
-        raise ValueError(f"Erreur OCR sur l'image : {e}")
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as tmp:
+        tmp.write(content)
+        tmp.flush()
+        reader = easyocr.Reader(["fr", "en"], gpu=False, verbose=False)
+        results = reader.readtext(tmp.name)
+
+    text = " ".join([r[1] for r in results])
+    if not text.strip():
+        raise ValueError("Aucun texte détecté dans l'image.")
+    return text.strip()
 
 
 def is_text_file(file_name: str) -> bool:
