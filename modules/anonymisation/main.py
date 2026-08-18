@@ -3,6 +3,7 @@ import uuid
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 import httpx
 
 from ..services.anonymizer import Anonymizer, deanonymize
@@ -14,6 +15,7 @@ from ..services.web_search import search_web
 from .file_handler import (
     extract_samples,
     extract_text_from_storage,
+    generate_anonymized_file,
     is_text_file,
     load_file_from_storage,
 )
@@ -30,6 +32,7 @@ from .storage import (
     get_pending_request,
     save_anonymisation_audit,
     save_conversation_mappings,
+    get_file,
     save_file,
     save_pending_request,
 )
@@ -108,6 +111,38 @@ async def upload_file(
         "fileName": file.filename,
         "size": len(content),
     }
+
+
+@app.get("/files/download")
+async def download_file(
+    file_id: str,
+    file_name: str,
+    current_user: str = Depends(verify_token),
+):
+    """Télécharge un fichier depuis le stockage (original ou anonymisé)."""
+    content = get_file(file_id, file_name)
+    if content is None:
+        raise HTTPException(status_code=404, detail="Fichier introuvable.")
+
+    # Déterminer le content-type
+    suffix = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+    content_types = {
+        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "csv": "text/csv",
+        "pdf": "application/pdf",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "txt": "text/plain",
+        "png": "image/png",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+    }
+    media_type = content_types.get(suffix, "application/octet-stream")
+
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{file_name}"'},
+    )
 
 
 # ── Endpoint 1 : Détection ──────────────────────────────────────────
@@ -208,6 +243,7 @@ async def _detect_text_file(request: OrchestrationRequest) -> DetectionResponse:
         "question": request.message,
         "content": extracted_text,
         "conversationId": request.conversationId,
+        "originalFileName": file_info.name,
     })
 
     return DetectionResponse(
@@ -341,6 +377,7 @@ async def _execute_file(
         response=final_response,
         webSearchUsed=web_used,
         anonymizedFileId=output_id,
+        anonymizedFileName=output_name,
         stats={
             "totalRows": len(anonymized_df),
             "fieldsAnonymized": len(request.validatedFields),
@@ -362,6 +399,7 @@ async def _execute_text(
     content = pending["content"]
     question = pending["question"]
     conv_id = request.conversationId
+    original_file_name = pending.get("originalFileName")
 
     # Charger les mappings existants de la conversation
     existing = get_conversation_mappings(conv_id)
@@ -374,6 +412,16 @@ async def _execute_text(
     anonymized_message = anonymizer.anonymize_text(
         content, request.validatedEntities
     )
+
+    # Sauvegarder le fichier anonymisé dans le même format que l'original
+    anon_file_id = None
+    anon_file_name = None
+    if original_file_name:
+        file_content, anon_file_name = generate_anonymized_file(
+            anonymized_message, original_file_name
+        )
+        anon_file_id = f"anon-{uuid.uuid4().hex[:12]}"
+        save_file(anon_file_id, anon_file_name, file_content, "application/octet-stream")
 
     # Sauvegarder les mappings de la conversation + audit
     mappings = anonymizer.get_mappings()
@@ -414,6 +462,8 @@ async def _execute_text(
         mode="text",
         response=final_response,
         webSearchUsed=web_used,
+        anonymizedFileId=anon_file_id,
+        anonymizedFileName=anon_file_name,
         stats={
             "entitiesAnonymized": len(request.validatedEntities),
             "strategies": {

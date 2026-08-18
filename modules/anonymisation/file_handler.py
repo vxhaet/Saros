@@ -116,3 +116,60 @@ def extract_samples(df: pd.DataFrame, n: int = 3) -> dict[str, list[str]]:
         non_null = df[col].dropna().head(n)
         samples[col] = [str(v) for v in non_null.tolist()]
     return samples
+
+
+# ── Génération de fichiers anonymisés ────────────────────────────────
+
+
+def generate_anonymized_file(
+    anonymized_text: str, original_file_name: str
+) -> tuple[bytes, str]:
+    """Génère un fichier anonymisé dans le même format que l'original.
+
+    Retourne (contenu_bytes, nom_du_fichier_anonymisé).
+    """
+    suffix = Path(original_file_name).suffix.lower()
+    stem = Path(original_file_name).stem
+    output_name = f"anonymized_{stem}{suffix}"
+
+    if suffix == ".txt":
+        content = _generate_txt(anonymized_text)
+    elif suffix == ".docx":
+        content = _generate_docx(anonymized_text)
+    elif suffix == ".pdf":
+        content = _generate_pdf(anonymized_text)
+    elif suffix in IMAGE_EXTENSIONS:
+        # Pour les images, on génère un TXT (on ne peut pas recréer l'image)
+        content = _generate_txt(anonymized_text)
+        output_name = f"anonymized_{stem}.txt"
+    else:
+        content = _generate_txt(anonymized_text)
+        output_name = f"anonymized_{stem}.txt"
+
+    return content, output_name
+
+
+def _generate_txt(text: str) -> bytes:
+    return text.encode("utf-8")
+
+
+def _generate_docx(text: str) -> bytes:
+    from docx import Document
+
+    doc = Document()
+    for line in text.split("\n"):
+        doc.add_paragraph(line)
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def _generate_pdf(text: str) -> bytes:
+    from fpdf import FPDF
+
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=10)
+    for line in text.split("\n"):
+        pdf.cell(0, 6, line, new_x="LMARGIN", new_y="NEXT")
+    return pdf.output()

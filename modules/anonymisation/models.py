@@ -100,7 +100,7 @@ class ExecutionResponse(BaseModel):
     mode: str  # "file" ou "text"
     response: str  # Réponse finale dé-anonymisée
     webSearchUsed: bool = False
-    # Mode fichier uniquement
+    # Fichier anonymisé téléchargeable
     anonymizedFileId: str | None = None
-    anonymizedFilePath: str | None = None
+    anonymizedFileName: str | None = None
     stats: dict
