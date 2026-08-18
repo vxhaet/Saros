@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     # Auth
     jwt_secret: str = "change-me-in-production"
-    jwt_expiration_hours: int = 24
+    jwt_expiration_hours: int = 120
 
     # Recherche web
     tavily_api_key: str | None = None
