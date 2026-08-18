@@ -1,4 +1,5 @@
 import json
+import re
 
 import pandas as pd
 from cryptography.fernet import Fernet
@@ -128,3 +129,32 @@ class Anonymizer:
         with open(mappings_path, "w", encoding="utf-8") as f:
             json.dump(self.get_mappings(), f, ensure_ascii=False, indent=2)
         return mappings_path
+
+
+def deanonymize(text: str, mappings: dict) -> str:
+    """Dé-anonymise un texte en remplaçant les placeholders et en déchiffrant les tokens Fernet.
+
+    C'est l'opération inverse de anonymize_text().
+    """
+    result = text
+
+    # Remplacer les placeholders par les valeurs originales
+    placeholder_mappings = mappings.get("placeholder_mappings", {})
+    for _category, mapping in placeholder_mappings.items():
+        for placeholder, original_value in mapping.items():
+            result = result.replace(placeholder, original_value)
+
+    # Déchiffrer les valeurs chiffrées si une clé est fournie
+    encryption_key = mappings.get("encryption_key")
+    if encryption_key:
+        fernet = Fernet(encryption_key.encode())
+        fernet_pattern = re.compile(r"gAAAAA[A-Za-z0-9_-]+=*")
+        for match in fernet_pattern.finditer(result):
+            token = match.group()
+            try:
+                decrypted = fernet.decrypt(token.encode()).decode()
+                result = result.replace(token, decrypted)
+            except Exception:
+                pass
+
+    return result

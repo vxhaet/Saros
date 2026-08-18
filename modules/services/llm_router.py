@@ -1,5 +1,4 @@
 import httpx
-from cryptography.fernet import Fernet
 
 from ..anonymisation.config import Settings
 
@@ -105,29 +104,3 @@ async def _send_openai(
         return data["choices"][0]["message"]["content"]
 
 
-def deanonymize(text: str, mappings: dict) -> str:
-    result = text
-
-    # Remplacer les placeholders par les valeurs originales
-    placeholder_mappings = mappings.get("placeholder_mappings", {})
-    for _category, mapping in placeholder_mappings.items():
-        for placeholder, original_value in mapping.items():
-            result = result.replace(placeholder, original_value)
-
-    # Déchiffrer les valeurs chiffrées si une clé est fournie
-    encryption_key = mappings.get("encryption_key")
-    if encryption_key:
-        fernet = Fernet(encryption_key.encode())
-        # Chercher les tokens Fernet dans le texte (commencent par gAAAAA)
-        import re
-
-        fernet_pattern = re.compile(r"gAAAAA[A-Za-z0-9_-]+=*")
-        for match in fernet_pattern.finditer(result):
-            token = match.group()
-            try:
-                decrypted = fernet.decrypt(token.encode()).decode()
-                result = result.replace(token, decrypted)
-            except Exception:
-                pass
-
-    return result
