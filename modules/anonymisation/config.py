@@ -7,6 +7,10 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen2.5:14b-instruct"
     encryption_key: str | None = None
 
+    # RunPod Serverless (alternative à Ollama)
+    runpod_api_key: str | None = None
+    runpod_endpoint_id: str | None = None
+
     # MongoDB
     mongo_uri: str | None = None
     mongo_db_name: str = "saros"

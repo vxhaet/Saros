@@ -6,6 +6,7 @@ from .config import Settings
 from .models import AnonymizationStrategy, DetectedEntity, DetectedField
 from .pattern_detector import detect_by_patterns
 from .rgpd import get_categories_for_prompt
+from ..services.local_llm import call_local_llm
 
 
 DETECTION_SYSTEM_PROMPT = """\
@@ -201,22 +202,6 @@ def parse_entity_response(raw_response: str) -> list[DetectedEntity]:
     return entities
 
 
-async def call_local_llm(prompt: str, settings: Settings, system_prompt: str = DETECTION_SYSTEM_PROMPT) -> str:
-    async with httpx.AsyncClient(timeout=600.0) as client:
-        response = await client.post(
-            f"{settings.ollama_base_url}/api/chat",
-            json={
-                "model": settings.ollama_model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt},
-                ],
-                "stream": False,
-                "format": "json",
-            },
-        )
-        response.raise_for_status()
-        return response.json()["message"]["content"]
 
 
 def parse_detection_response(
