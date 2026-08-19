@@ -72,7 +72,7 @@ async def _call_runpod(
                 "Content-Type": "application/json",
             },
             json={
-                "model": settings.ollama_model,
+                "model": settings.runpod_model,
                 "messages": messages,
                 "max_tokens": 4096,
                 "temperature": 0.1,

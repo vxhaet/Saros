@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     # RunPod Serverless (alternative à Ollama)
     runpod_api_key: str | None = None
     runpod_endpoint_id: str | None = None
+    runpod_model: str = "Qwen/Qwen2.5-7B-Instruct"
 
     # MongoDB
     mongo_uri: str | None = None
