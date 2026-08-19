@@ -37,7 +37,9 @@ from .storage import (
     save_pending_request,
 )
 
-app = FastAPI(title="Saros - Module Anonymisation", version="0.5.0")
+from ..admin.routes import router as admin_router
+
+app = FastAPI(title="Saros", version="0.6.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -46,6 +48,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(admin_router)
 
 
 # ── Authentification (pas de token requis) ───────────────────────────

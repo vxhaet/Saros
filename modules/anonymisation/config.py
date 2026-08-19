@@ -18,6 +18,16 @@ class Settings(BaseSettings):
     # Recherche web
     tavily_api_key: str | None = None
 
+    # Email (SMTP)
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str | None = None
+
+    # URL de base du service (pour les liens d'approbation)
+    base_url: str = "https://saros-s5ut.onrender.com"
+
     # LLM externes
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
