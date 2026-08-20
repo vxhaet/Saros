@@ -23,6 +23,8 @@ from .storage import (
     get_pending_approvals_for_group,
     get_relations_for_group,
     get_relations_for_user,
+    remove_all_relations_for_user,
+    remove_pending_approvals_for_user,
     remove_relation,
     save_member,
     save_pending_approval,
@@ -282,10 +284,38 @@ async def delete_member_endpoint(
     user_id: str,
     current_user: str = Depends(verify_token),
 ):
-    """Supprime un membre."""
-    if not delete_member(user_id):
+    """Supprime complètement un compte membre.
+
+    Supprime : le membre, toutes ses relations (groupes),
+    ses demandes en attente, et son compte de login.
+    Conformité RGPD : suppression physique totale.
+    """
+    if not get_member(user_id):
         raise HTTPException(status_code=404, detail="Membre introuvable.")
-    return {"status": "deleted"}
+
+    # 1. Supprimer toutes les relations (groupes)
+    relations_deleted = remove_all_relations_for_user(user_id)
+
+    # 2. Supprimer les demandes en attente
+    pending_deleted = remove_pending_approvals_for_user(user_id)
+
+    # 3. Supprimer le compte login
+    from ..anonymisation.storage import _get_db, _memory_users
+    db = _get_db()
+    if db is None:
+        _memory_users.pop(user_id, None)
+    else:
+        db.users.delete_one({"_id": user_id})
+
+    # 4. Supprimer le membre
+    delete_member(user_id)
+
+    return {
+        "status": "deleted",
+        "userId": user_id,
+        "relationsDeleted": relations_deleted,
+        "pendingDeleted": pending_deleted,
+    }
 
 
 # ── CRUD Groupes ─────────────────────────────────────────────────────

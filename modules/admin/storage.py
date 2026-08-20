@@ -246,6 +246,38 @@ def remove_relation(user_id: str, group_id: str) -> bool:
     return result.deleted_count > 0
 
 
+def remove_all_relations_for_user(user_id: str) -> int:
+    """Supprime toutes les relations d'un membre (tous ses groupes)."""
+    db = _get_db()
+
+    if db is None:
+        before = len(_memory_relations)
+        _memory_relations[:] = [
+            r for r in _memory_relations if r["userId"] != user_id
+        ]
+        return before - len(_memory_relations)
+
+    result = db.relations.delete_many({"userId": user_id})
+    return result.deleted_count
+
+
+def remove_pending_approvals_for_user(user_id: str) -> int:
+    """Supprime toutes les demandes en attente d'un membre."""
+    db = _get_db()
+
+    if db is None:
+        before = len(_memory_pending_approvals)
+        to_delete = [
+            k for k, v in _memory_pending_approvals.items() if v["userId"] == user_id
+        ]
+        for k in to_delete:
+            del _memory_pending_approvals[k]
+        return len(to_delete)
+
+    result = db.pending_approvals.delete_many({"userId": user_id})
+    return result.deleted_count
+
+
 # ── Demandes d'approbation en attente ────────────────────────────────
 
 
