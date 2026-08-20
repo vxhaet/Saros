@@ -166,8 +166,9 @@ async def detect_sensitive_entities(
             prompt, settings, system_prompt=TEXT_DETECTION_SYSTEM_PROMPT
         )
         llm_entities = parse_entity_response(raw_response)
-    except (httpx.ConnectError, httpx.ReadTimeout):
-        # Ollama non disponible — on continue avec les regex seuls
+    except (httpx.ConnectError, httpx.ReadTimeout, httpx.HTTPStatusError, Exception) as e:
+        # LLM local non disponible (Ollama ou RunPod) — on continue avec les regex seuls
+        print(f"[DETECT] LLM local indisponible ({type(e).__name__}: {e}), fallback regex uniquement.")
         pass
 
     # Fusion : LLM d'abord (placeholders lisibles), puis patterns (encryption)
