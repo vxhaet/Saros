@@ -289,6 +289,30 @@ def get_pending_approval(approval_id: str) -> dict | None:
     return doc
 
 
+def get_pending_approvals_for_group(group_id: str) -> list[dict]:
+    """Retourne toutes les demandes en attente pour un groupe."""
+    db = _get_db()
+
+    if db is None:
+        return [
+            {"approvalId": k, **v}
+            for k, v in _memory_pending_approvals.items()
+            if v["groupId"] == group_id and v["status"] == "pending"
+        ]
+
+    docs = db.pending_approvals.find({"groupId": group_id, "status": "pending"})
+    return [
+        {
+            "approvalId": doc["_id"],
+            "userId": doc["userId"],
+            "groupId": doc["groupId"],
+            "memberData": doc["memberData"],
+            "created_at": doc.get("created_at"),
+        }
+        for doc in docs
+    ]
+
+
 def delete_pending_approval(approval_id: str) -> None:
     db = _get_db()
 

@@ -20,6 +20,7 @@ from .storage import (
     get_group_admins,
     get_member,
     get_pending_approval,
+    get_pending_approvals_for_group,
     get_relations_for_group,
     get_relations_for_user,
     remove_relation,
@@ -166,7 +167,31 @@ def _register_join_group(request: RegisterRequest) -> RegisterResponse:
 # ── Approbation / Rejet ──────────────────────────────────────────────
 
 
-@router.get("/approve/{approval_id}", response_model=ApprovalResponse)
+@router.get("/groups/{group_id}/pending")
+async def list_pending_approvals(
+    group_id: str,
+    current_user: str = Depends(verify_token),
+):
+    """Liste les demandes d'adhésion en attente pour un groupe. Réservé aux admins."""
+    admins = get_group_admins(group_id)
+    admin_ids = [a.get("userId") or a.get("_id") for a in admins]
+    if current_user not in admin_ids:
+        raise HTTPException(
+            status_code=403,
+            detail="Seuls les administrateurs peuvent voir les demandes en attente.",
+        )
+
+    pending = get_pending_approvals_for_group(group_id)
+
+    # Convertir les datetime
+    for p in pending:
+        if "created_at" in p and hasattr(p["created_at"], "isoformat"):
+            p["created_at"] = p["created_at"].isoformat()
+
+    return {"groupId": group_id, "pending": pending, "total": len(pending)}
+
+
+@router.post("/approve/{approval_id}", response_model=ApprovalResponse)
 async def approve_member(approval_id: str):
     """Approuve une demande d'adhésion à un groupe."""
     pending = get_pending_approval(approval_id)
@@ -206,7 +231,7 @@ async def approve_member(approval_id: str):
     )
 
 
-@router.get("/reject/{approval_id}", response_model=ApprovalResponse)
+@router.post("/reject/{approval_id}", response_model=ApprovalResponse)
 async def reject_member(approval_id: str):
     """Rejette une demande d'adhésion à un groupe."""
     pending = get_pending_approval(approval_id)
