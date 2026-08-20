@@ -185,8 +185,10 @@ async def list_pending_approvals(
 
     pending = get_pending_approvals_for_group(group_id)
 
-    # Convertir les datetime
+    # Nettoyer les données sensibles + convertir les datetime
     for p in pending:
+        if "memberData" in p:
+            p["memberData"].pop("password", None)
         if "created_at" in p and hasattr(p["created_at"], "isoformat"):
             p["created_at"] = p["created_at"].isoformat()
 
