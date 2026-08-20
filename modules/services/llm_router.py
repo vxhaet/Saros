@@ -28,13 +28,19 @@ async def send_to_llm(
     target_llm: str,
     settings: Settings,
     system_prompt: str | None = None,
+    api_key: str | None = None,
 ) -> str:
+    """Envoie du contenu au LLM externe.
+
+    Args:
+        api_key: Clé API du groupe. Si fournie, prioritaire sur la config globale.
+    """
     provider = resolve_provider(target_llm)
 
     if provider == "anthropic":
-        return await _send_anthropic(content, target_llm, settings, system_prompt)
+        return await _send_anthropic(content, target_llm, settings, system_prompt, api_key)
     elif provider == "openai":
-        return await _send_openai(content, target_llm, settings, system_prompt)
+        return await _send_openai(content, target_llm, settings, system_prompt, api_key)
 
     raise ValueError(f"Provider '{provider}' non implémenté.")
 
@@ -44,9 +50,11 @@ async def _send_anthropic(
     model: str,
     settings: Settings,
     system_prompt: str | None,
+    api_key: str | None = None,
 ) -> str:
-    if not settings.anthropic_api_key:
-        raise ValueError("Clé API Anthropic non configurée (SAROS_ANON_ANTHROPIC_API_KEY).")
+    key = api_key or settings.anthropic_api_key
+    if not key:
+        raise ValueError("Clé API Anthropic non configurée.")
 
     messages = [{"role": "user", "content": content}]
 
@@ -62,7 +70,7 @@ async def _send_anthropic(
         response = await client.post(
             "https://api.anthropic.com/v1/messages",
             headers={
-                "x-api-key": settings.anthropic_api_key,
+                "x-api-key": key,
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
             },
@@ -78,9 +86,11 @@ async def _send_openai(
     model: str,
     settings: Settings,
     system_prompt: str | None,
+    api_key: str | None = None,
 ) -> str:
-    if not settings.openai_api_key:
-        raise ValueError("Clé API OpenAI non configurée (SAROS_ANON_OPENAI_API_KEY).")
+    key = api_key or settings.openai_api_key
+    if not key:
+        raise ValueError("Clé API OpenAI non configurée.")
 
     messages = []
     if system_prompt:
@@ -91,7 +101,7 @@ async def _send_openai(
         response = await client.post(
             "https://api.openai.com/v1/chat/completions",
             headers={
-                "Authorization": f"Bearer {settings.openai_api_key}",
+                "Authorization": f"Bearer {key}",
                 "Content-Type": "application/json",
             },
             json={

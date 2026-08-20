@@ -83,7 +83,7 @@ class ExecutionRequest(BaseModel):
     requestId: str
     userId: str
     conversationId: str
-    targetLlm: str  # ex: "claude-sonnet-4-6", "gpt-4o"
+    targetLlm: str | None = None  # Optionnel — utilise le LLM du groupe si non fourni
     systemPrompt: str | None = None
     webSearch: bool = True  # Active la recherche web via Tavily
     webSearchDomains: list[str] = []  # Restreint la recherche à ces domaines

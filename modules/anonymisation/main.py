@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 import httpx
 
+from ..admin.storage import get_member, get_group
 from ..services.anonymizer import Anonymizer, deanonymize
 from ..services.auth import authenticate_user, create_token, refresh_existing_token, register_user, verify_token
 from .config import settings
@@ -308,15 +309,18 @@ async def execute(
 
     delete_pending_request(request.requestId)
 
+    # Récupérer les paramètres du groupe de l'utilisateur
+    group_settings = _get_group_settings(request.userId)
+
     mode = pending["mode"]
 
     if mode == "file":
-        return await _execute_file(request, pending)
-    return await _execute_text(request, pending)
+        return await _execute_file(request, pending, group_settings)
+    return await _execute_text(request, pending, group_settings)
 
 
 async def _execute_file(
-    request: ExecutionRequest, pending: dict
+    request: ExecutionRequest, pending: dict, group_settings: dict
 ) -> ExecutionResponse:
     df = pending["df"]
     file_info = pending["file_info"]
@@ -363,12 +367,16 @@ async def _execute_file(
             web_context = f"\n\nInformations trouvées sur le web :\n{web_results}\n"
             web_used = True
 
-    # 3. Envoyer au LLM externe
+    # 3. Envoyer au LLM externe (clé API et modèle du groupe prioritaires)
+    target_llm = request.targetLlm or group_settings.get("choixLLM", "claude-sonnet-4-6")
+    group_api_key = group_settings.get("cleAPI")
+
     anonymized_content = f"{question}{web_context}\n\nDonnées anonymisées :\n{anonymized_df.to_string(index=False)}"
     llm_response = await _call_llm(
         content=anonymized_content,
-        target_llm=request.targetLlm,
+        target_llm=target_llm,
         system_prompt=request.systemPrompt,
+        api_key=group_api_key,
     )
 
     # 4. Dé-anonymiser la réponse
@@ -398,7 +406,7 @@ async def _execute_file(
 
 
 async def _execute_text(
-    request: ExecutionRequest, pending: dict
+    request: ExecutionRequest, pending: dict, group_settings: dict
 ) -> ExecutionResponse:
     content = pending["content"]
     question = pending["question"]
@@ -445,7 +453,10 @@ async def _execute_text(
             web_context = f"\n\nInformations trouvées sur le web :\n{web_results}\n"
             web_used = True
 
-    # 3. Envoyer au LLM externe
+    # 3. Envoyer au LLM externe (clé API et modèle du groupe prioritaires)
+    target_llm = request.targetLlm or group_settings.get("choixLLM", "claude-sonnet-4-6")
+    group_api_key = group_settings.get("cleAPI")
+
     if question == content:
         llm_content = f"{anonymized_message}{web_context}"
     else:
@@ -453,8 +464,9 @@ async def _execute_text(
 
     llm_response = await _call_llm(
         content=llm_content,
-        target_llm=request.targetLlm,
+        target_llm=target_llm,
         system_prompt=request.systemPrompt,
+        api_key=group_api_key,
     )
 
     # 4. Dé-anonymiser la réponse
@@ -482,16 +494,42 @@ async def _execute_text(
     )
 
 
+def _get_group_settings(user_id: str) -> dict:
+    """Récupère les paramètres du groupe de l'utilisateur.
+
+    Retourne : choixLLM, cleAPI, searchWeb, validationAnonym.
+    Fallback sur la config globale si le groupe n'est pas trouvé.
+    """
+    member = get_member(user_id)
+    if not member or not member.get("groupId"):
+        return {}
+
+    group = get_group(member["groupId"])
+    if not group:
+        return {}
+
+    return {
+        "choixLLM": group.get("choixLLM"),
+        "cleAPI": group.get("cleAPI"),
+        "searchWeb": group.get("searchWeb", True),
+        "validationAnonym": group.get("validationAnonym", True),
+    }
+
+
 async def _call_llm(
-    content: str, target_llm: str, system_prompt: str | None = None
+    content: str,
+    target_llm: str,
+    system_prompt: str | None = None,
+    api_key: str | None = None,
 ) -> str:
-    """Appel interne au LLM externe. Jamais exposé au front."""
+    """Appel interne au LLM externe. Utilise la clé API du groupe si disponible."""
     try:
         return await send_to_llm(
             content=content,
             target_llm=target_llm,
             settings=settings,
             system_prompt=system_prompt,
+            api_key=api_key,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
