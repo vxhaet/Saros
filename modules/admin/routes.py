@@ -380,6 +380,51 @@ async def list_group_members(
 # ── CRUD Relations ───────────────────────────────────────────────────
 
 
+@router.post("/groups/{group_id}/add-member")
+async def add_existing_member_to_group(
+    group_id: str,
+    user_id: str,
+    current_user: str = Depends(verify_token),
+):
+    """Ajoute un utilisateur existant dans un groupe. Réservé aux admins du groupe."""
+    # Vérifier que l'utilisateur courant est admin du groupe
+    admins = get_group_admins(group_id)
+    admin_ids = [a.get("userId") or a.get("_id") for a in admins]
+    if current_user not in admin_ids:
+        raise HTTPException(
+            status_code=403,
+            detail="Seuls les administrateurs peuvent ajouter des membres.",
+        )
+
+    # Vérifier que le groupe existe
+    group = get_group(group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Groupe introuvable.")
+
+    # Vérifier que le membre existe
+    member = get_member(user_id)
+    if not member:
+        raise HTTPException(status_code=404, detail=f"Utilisateur '{user_id}' introuvable.")
+
+    # Vérifier qu'il n'est pas déjà dans le groupe
+    existing_relations = get_relations_for_group(group_id)
+    if any(r["userId"] == user_id for r in existing_relations):
+        raise HTTPException(
+            status_code=409,
+            detail=f"'{user_id}' est déjà membre de ce groupe.",
+        )
+
+    # Créer la relation
+    add_relation(user_id, group_id, role="member")
+
+    return {
+        "status": "added",
+        "userId": user_id,
+        "groupId": group_id,
+        "role": "member",
+    }
+
+
 @router.delete("/relations/{user_id}/{group_id}")
 async def remove_member_from_group(
     user_id: str,
